@@ -2,34 +2,33 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import Label, Header, Button
 from random import randint
+from collections import deque
 
 class Snake:
-    def __init__(self, x: int = 0, y: int = 0, dir: str = "r") -> None:
-            self.x, self.y, self.dir = x, y, dir
-            self.score = 0
+    def __init__(self, x: int = 0, y: int = 0, dir: str = "r") -> None: 
+        self.body = deque([ (x, y), (x-1, y), (x-2, y) ])
+        self.dir = dir
+        self.score = 0
     
     def move(self, dx: int, dy: int) -> None:
-            self.x += dx
-            self.y += dy
-
-class Player:
-    def __init__(self, x: int, y: int, dir: str) -> None:
-        self.x, self.y, self.dir = x, y, dir
-        self.score: int = 0
-
-    def move(self, dx: int, dy: int) -> None:
-        self.x += dx
-        self.y += dy
+        new_head_x = self.body[0][0] + dx
+        new_head_y = self.body[0][1] + dy
+        self.body.appendleft((new_head_x, new_head_y))
+        self.body.pop()
 
 class Food:
     def __init__(self, x: int, y: int) -> None:
         self.x, self.y = x, y
 
+    def power(self, snake: Snake):
+        last_x, last_y = snake.body[len(snake.body)-1]
+        snake.body.append((last_x, last_y))
+
 class MyApp(App):
     CSS_PATH = "app.tcss"
 
-    def __init__(self) -> None:
-        self.player: Player = Player(randint(10, 30), randint(10, 20), 'r')
+    def __init__(self) -> None: 
+        self.snake = Snake(randint(10, 30), randint(10, 20), 'r')
         self.GO_status: bool = False
         self.time: float = 0.0
         self.game_speed: float = 0.1
@@ -44,16 +43,19 @@ class MyApp(App):
             with Vertical(classes="playground-container"):
                 self.playground_widget = Container(classes="playground")
                 with self.playground_widget:
-                    self.snake_widget = Label("◉", classes="snake")
-                    self.snake_widget.styles.offset = (self.player.x, self.player.y)
-                    yield self.snake_widget
+                    self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+                    for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
+                        s_w.styles.offset = pos
+                        if i==0:
+                            s_w.styles.color = "white"
+                        yield s_w
             
             with Vertical(classes="footer-container"):
                 with Horizontal(classes="footer-cards"):
                     self.score_widget = Label(f"SCORE: 000", classes="footer-card", id="score")
                     yield self.score_widget
 
-                    self.position_widget = Label(f"Position: {self.player.x} {self.player.y}", classes="footer-card", id="footer-card-position")
+                    self.position_widget = Label(f"POSITION: {self.snake.body[0][0]} {self.snake.body[0][1]}", classes="footer-card", id="footer-card-position")
                     yield self.position_widget
 
                     min, sec = int(self.time//60), int(self.time) % 60
@@ -65,50 +67,60 @@ class MyApp(App):
         if self.GO_status:
             return
 
-        p = self.player
+        s = self.snake
         
         # up down 
-        if event.key in ('s', 'down') and p.dir!="u":
-            p.dir = "d"
-        elif event.key in ('w', 'up') and p.dir!="d":
-            p.dir = "u"
+        if event.key in ('s', 'down') and s.dir!="u":
+            s.dir = "d"
+        elif event.key in ('w', 'up') and s.dir!="d":
+            s.dir = "u"
 
         # right left 
-        elif event.key in ('d', 'right') and p.dir!="l":
-            p.dir = "r"
-        elif event.key in ('a', 'left') and p.dir!="r":
-            p.dir = "l"
+        elif event.key in ('d', 'right') and s.dir!="l":
+            s.dir = "r"
+        elif event.key in ('a', 'left') and s.dir!="r":
+            s.dir = "l"
 
-        # self.game_tick()
+        self.game_tick()
 
     def on_ready(self) -> None:
         self.food_spawn()
-        self.set_interval(self.game_speed, self.game_tick)
+        # self.set_interval(self.game_speed, self.game_tick)
 
     def game_tick(self) -> None:
         if self.GO_status:
             return
 
         g = self.playground_widget
-        p = self.player
+        s = self.snake
+        head_x = s.body[0][0]
+        head_y = s.body[0][1]
 
         # up down
-        if p.dir=="d" and p.y < g.size.height:
-            p.move(0, 1)
-        elif p.dir=="u" and p.y >= 0:
-            p.move(0, -1)
+        if s.dir=="d" and head_y < g.size.height:
+            s.move(0, 1)
+        elif s.dir=="u" and head_y >= 0:
+            s.move(0, -1)
         
         # right left 
-        elif p.dir=="r" and p.x < g.size.width:
-            p.move(1, 0)
-        elif p.dir=="l" and p.x >= 0:
-            p.move(-1, 0)
+        elif s.dir=="r" and head_x < g.size.width:
+            s.move(1, 0)
+        elif s.dir=="l" and head_x >= 0:
+            s.move(-1, 0)
 
         # update position 
-        self.position_widget.update(f"Position: {p.x} {p.y}")
+        self.position_widget.update(f"POSITION: {head_x} {head_y}")
         
         # move snake
-        self.snake_widget.styles.offset = (p.x, p.y)
+        for s_w in self.snake_widget:
+            s_w.remove()
+
+        self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
+            s_w.styles.offset = pos
+            if i==0:
+                s_w.styles.color = "white"
+            g.mount(s_w)
         
         # collision
         self.check_food_collision()
@@ -130,20 +142,34 @@ class MyApp(App):
         g.mount(self.food_widget)
 
     def check_food_collision(self) -> None:
-            p = self.player
-            f = self.food
-    
-            if p.y==f.y and p.x == f.x: 
-                self.food_widget.remove()
-                self.food_spawn()
-                self.player.score+=1
-                self.score_widget.update(f"SCORE: {self.player.score}")
+        s = self.snake
+        f = self.food
+        
+        head_x = s.body[0][0]
+        head_y = s.body[0][1]
+
+        if head_y==f.y and head_x == f.x: 
+            self.food_widget.remove()
+            self.food_spawn()
+            s.score+=1
+            self.score_widget.update(f"SCORE: {s.score}")
+            f.power(s)
 
     def check_GO(self) -> None:
-        p: Player = self.player
-        g: Container = self.playground_widget
+        g = self.playground_widget
+        s = self.snake
+        
+        head_x = s.body[0][0]
+        head_y = s.body[0][1]
 
-        if any([p.x < 0, p.y < 0, p.x == g.size.width, p.y == g.size.height]):
+        go_conditions = [
+            head_x < 0, 
+            head_y < 0, 
+            head_x == g.size.width, 
+            head_y == g.size.height
+        ]
+
+        if any(go_conditions):
             self.GO_status = True
 
             self.game_over_widget: Label = Label("G A M E  O V E R", classes="game_over")
@@ -162,16 +188,31 @@ class MyApp(App):
         self.restart_widget.remove()
         
         # restart game variables
-        self.player = Player(randint(10, 30), randint(10, 20), 'r')
-        self.GO_status = False
-        self.time = 0.0
-        self.game_speed = 0.1
+        self.snake = Snake(randint(10, 30), randint(10, 20), 'r')
+        self.GO_status: bool = False
+        self.time: float = 0.0
+        self.game_speed: float = 0.1
         
         # restart visuals
-        self.snake_widget.styles.offset = (self.player.x, self.player.y)
-        self.score_widget.update("SCORE: 000")
-        self.position_widget.update(f"Position: {self.player.x} {self.player.y}")
-        self.time_widget.update("00:00")
+        g = self.playground_widget
+        head_x = self.snake.body[0][0]
+        head_y = self.snake.body[0][1]
+
+        # redraw snake
+        for s_w in self.snake_widget:
+            s_w.remove()
+        
+        self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
+            s_w.styles.offset = pos
+            if i==0:
+                s_w.styles.color = "white"
+            g.mount(s_w)
+
+        # footer cards
+        self.position_widget.update(f"POSITION: {head_x} {head_y}")
+        self.score_widget.update("SCORE: 000") 
+        self.time_widget.update("TIME: 00:00")
     
     # footer  -------------------------
     def update_time(self) -> None: 
