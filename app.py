@@ -6,7 +6,7 @@ from collections import deque
 
 class Snake:
     def __init__(self, x: int = 0, y: int = 0, dir: str = "r") -> None: 
-        self.body = deque([ (x, y), (x-1, y), (x-2, y) ])
+        self.body = deque([ (x, y), (x-1, y), (x-2, y), (x-3, y), (x-4, y) ])
         self.dir = dir
         self.score = 0
     
@@ -166,7 +166,8 @@ class MyApp(App):
             head_x < 0, 
             head_y < 0, 
             head_x == g.size.width, 
-            head_y == g.size.height
+            head_y == g.size.height,
+            (head_x, head_y) in list(self.snake.body)[1:]
         ]
 
         if any(go_conditions):
