@@ -5,18 +5,22 @@ from random import randint
 from collections import deque
 
 class Snake:
+    icon = "██"
+    head_color = "#d8ffe0"
+
     def __init__(self, x: int = 0, y: int = 0, dir: str = "r") -> None: 
-        self.body = deque([ (x, y), (x-1, y), (x-2, y), (x-3, y), (x-4, y) ])
+        self.body = deque([ (x, y), (x-2, y), (x-4, y), (x-6, y), (x-8, y) ])
         self.dir = dir
         self.score = 0
     
     def move(self, dx: int, dy: int) -> None:
-        new_head_x = self.body[0][0] + dx
+        new_head_x = self.body[0][0] + 2*dx
         new_head_y = self.body[0][1] + dy
         self.body.appendleft((new_head_x, new_head_y))
         self.body.pop()
 
 class Food:
+    icon = "◆◆"
     def __init__(self, x: int, y: int) -> None:
         self.x, self.y = x, y
 
@@ -27,8 +31,9 @@ class Food:
 class MyApp(App):
     CSS_PATH = "app.tcss"
 
-    def __init__(self) -> None: 
-        self.snake = Snake(randint(10, 30), randint(10, 20), 'r')
+    def __init__(self) -> None:
+        random_pos = randint(10, 20)
+        self.snake = Snake(random_pos-1 if random_pos&1 else random_pos, randint(10, 30), 'r') # ('r', 'u', 'd')[randint(0, 2)]
         self.GO_status: bool = False
         self.time: float = 0.0
         self.game_speed: float = 0.1
@@ -43,11 +48,11 @@ class MyApp(App):
             with Vertical(classes="playground-container"):
                 self.playground_widget = Container(classes="playground")
                 with self.playground_widget:
-                    self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+                    self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
                     for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
                         s_w.styles.offset = pos
                         if i==0:
-                            s_w.styles.color = "white"
+                            s_w.styles.color = self.snake.head_color
                         yield s_w
             
             with Vertical(classes="footer-container"):
@@ -72,6 +77,7 @@ class MyApp(App):
         # up down 
         if event.key in ('s', 'down') and s.dir!="u":
             s.dir = "d"
+
         elif event.key in ('w', 'up') and s.dir!="d":
             s.dir = "u"
 
@@ -115,11 +121,11 @@ class MyApp(App):
         for s_w in self.snake_widget:
             s_w.remove()
 
-        self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
         for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
             s_w.styles.offset = pos
             if i==0:
-                s_w.styles.color = "white"
+                s_w.styles.color = self.snake.head_color
             g.mount(s_w)
         
         # collision
@@ -134,10 +140,12 @@ class MyApp(App):
     # Food and collision -------------------------
     def food_spawn(self) -> None:
         g = self.playground_widget
-        self.food = Food(randint(0, self.playground_widget.size.width - 1), randint(0, self.playground_widget.size.height - 1))
+        food_x = randint(0, self.playground_widget.size.width - 1)
+        food_y = randint(0, self.playground_widget.size.height - 1)
+        self.food = Food(food_x-1 if food_x&1 else food_x, food_y)
         f = self.food
 
-        self.food_widget = Label(f"◉", classes="food")
+        self.food_widget = Label(f"{self.food.icon}", classes="food")
         self.food_widget.styles.offset = (f.x, f.y)
         g.mount(self.food_widget)
 
@@ -189,7 +197,8 @@ class MyApp(App):
         self.restart_widget.remove()
         
         # restart game variables
-        self.snake = Snake(randint(10, 30), randint(10, 20), 'r')
+        random_pos = randint(10, 20)
+        self.snake = Snake(random_pos-1 if random_pos&1 else random_pos, randint(10, 30), 'r') # ('r', 'u', 'd')[randint(0, 2)]
         self.GO_status: bool = False
         self.time: float = 0.0
         self.game_speed: float = 0.1
@@ -203,11 +212,11 @@ class MyApp(App):
         for s_w in self.snake_widget:
             s_w.remove()
         
-        self.snake_widget = [ Label("◉", classes="snake") for _ in self.snake.body ]
+        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
         for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
             s_w.styles.offset = pos
             if i==0:
-                s_w.styles.color = "white"
+                s_w.styles.color = self.snake.head_color
             g.mount(s_w)
 
         # footer cards

@@ -34,15 +34,16 @@
 
     .snake {
       height: 1;
-      width: 1;
-      color: #a7f3b5;
+      width: 2;
+      color: #22c55e;
       position: absolute;
+      text-style: bold;
     }
 
     .food {
       height: 1;
-      width: 1;
-      color: #ff6b81;
+      width: 2;
+      color: #fb7185;
       position: absolute;
     }
   }
