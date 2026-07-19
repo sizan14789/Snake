@@ -1,6 +1,8 @@
+from sys import exit
+
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal, Container
-from textual.widgets import Label, Header, Button
+from textual.widgets import Label, Button
 from random import randint
 from collections import deque
 
@@ -11,7 +13,6 @@ class Snake:
     def __init__(self, x: int = 0, y: int = 0, dir: str = "r") -> None: 
         self.body = deque([ (x, y), (x-2, y), (x-4, y), (x-6, y), (x-8, y) ])
         self.dir = dir
-        self.score = 0
     
     def move(self, dx: int, dy: int) -> None:
         new_head_x = self.body[0][0] + 2*dx
@@ -19,14 +20,17 @@ class Snake:
         self.body.appendleft((new_head_x, new_head_y))
         self.body.pop()
 
+    def grow(self):
+        last_x, last_y = self.body[-1]
+        self.body.append((last_x, last_y))
+
 class Food:
     icon = "◆◆"
     def __init__(self, x: int, y: int) -> None:
         self.x, self.y = x, y
 
     def power(self, snake: Snake):
-        last_x, last_y = snake.body[len(snake.body)-1]
-        snake.body.append((last_x, last_y))
+        snake.grow()
 
 class MyApp(App):
     CSS_PATH = "app.tcss"
@@ -34,9 +38,14 @@ class MyApp(App):
     def __init__(self) -> None:
         random_pos = randint(10, 20)
         self.snake = Snake(random_pos-1 if random_pos&1 else random_pos, randint(10, 30), 'r') # ('r', 'u', 'd')[randint(0, 2)]
-        self.GO_status: bool = False
-        self.time: float = 0.0
-        self.game_speed: float = 0.1
+
+        self.time: float = 0.0 
+        self.score = 0
+        self.level = 1
+
+        self.game_over: bool = False
+        self.paused = False
+        
         super().__init__()
 
     # layout -------------------------
@@ -63,13 +72,20 @@ class MyApp(App):
                     self.position_widget = Label(f"POSITION: {self.snake.body[0][0]} {self.snake.body[0][1]}", classes="footer-card", id="footer-card-position")
                     yield self.position_widget
 
+                    self.level_widget = Label(f"LEVEL: {self.level:02d}", classes="footer-card", id="footer-card-level")
+                    yield self.level_widget
+
                     min, sec = int(self.time//60), int(self.time) % 60
                     self.time_widget = Label(f"TIME: {min:02d}:{sec}", classes="footer-card")
                     yield self.time_widget
 
     # Movement -------------------------
     def on_key(self, event) -> None:
-        if self.GO_status:
+        if self.game_over:
+            return
+        if self.paused:
+            if event.key in ('escape', 'space'):
+                self.resume_game()
             return
 
         s = self.snake
@@ -86,47 +102,45 @@ class MyApp(App):
             s.dir = "r"
         elif event.key in ('a', 'left') and s.dir!="r":
             s.dir = "l"
+        elif event.key in ('escape', 'space'): 
+            self.pause_game()
 
         self.game_tick()
 
     def on_ready(self) -> None:
         self.food_spawn()
-        # self.set_interval(self.game_speed, self.game_tick)
+        interval = min(0.8 , 0.22-self.level * 0.2)
+        # self.set_interval(interval, self.game_tick)
 
     def game_tick(self) -> None:
-        if self.GO_status:
+        if self.game_over:
             return
 
-        g = self.playground_widget
+        if self.paused:
+            return
+ 
         s = self.snake
-        head_x = s.body[0][0]
-        head_y = s.body[0][1]
+        head_x, head_y = s.body[0] 
 
         # up down
-        if s.dir=="d" and head_y < g.size.height:
+        if s.dir=="d":
             s.move(0, 1)
-        elif s.dir=="u" and head_y >= 0:
+        elif s.dir=="u":
             s.move(0, -1)
         
         # right left 
-        elif s.dir=="r" and head_x < g.size.width:
+        elif s.dir=="r":
             s.move(1, 0)
-        elif s.dir=="l" and head_x >= 0:
+        elif s.dir=="l":
             s.move(-1, 0)
+        
+        head_x, head_y = s.body[0]
 
         # update position 
         self.position_widget.update(f"POSITION: {head_x} {head_y}")
-        
+ 
         # move snake
-        for s_w in self.snake_widget:
-            s_w.remove()
-
-        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
-        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
-            s_w.styles.offset = pos
-            if i==0:
-                s_w.styles.color = self.snake.head_color
-            g.mount(s_w)
+        self.render_snake()
         
         # collision
         self.check_food_collision()
@@ -137,11 +151,24 @@ class MyApp(App):
         # update time
         self.update_time()
 
+    def render_snake(self):
+        for s_w in self.snake_widget:
+            s_w.remove()
+        
+        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
+        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
+            s_w.styles.offset = pos
+            if i==0:
+                s_w.styles.color = self.snake.head_color
+            self.playground_widget.mount(s_w)
+
     # Food and collision -------------------------
     def food_spawn(self) -> None:
         g = self.playground_widget
+
         food_x = randint(0, self.playground_widget.size.width - 1)
         food_y = randint(0, self.playground_widget.size.height - 1)
+
         self.food = Food(food_x-1 if food_x&1 else food_x, food_y)
         f = self.food
 
@@ -153,81 +180,109 @@ class MyApp(App):
         s = self.snake
         f = self.food
         
-        head_x = s.body[0][0]
-        head_y = s.body[0][1]
+        head_x, head_y = s.body[0] 
 
-        if head_y==f.y and head_x == f.x: 
+        if (head_x, head_y) in [ (f.x, f.y) ]:
             self.food_widget.remove()
             self.food_spawn()
-            s.score+=1
-            self.score_widget.update(f"SCORE: {s.score}")
+
+            self.score+=1
+            self.score_widget.update(f"SCORE: {self.score:03d}")
+
+            self.level = self.score // 5 + 1
+            self.level_widget.update(f"LEVEL: {self.level:02d}")
+
             f.power(s)
 
+    # Pause Resume -------------------------
+    def pause_game(self):
+        self.paused = True
+    
+        g = self.playground_widget
+        self.pause_widget = Container(classes="pause-menu")
+        g.mount(self.pause_widget)
+    
+        self.pause_widget.mount(Label("P A U S E D", classes='pause-title'))
+        self.pause_widget.mount(Button("Resume", classes='pause-go-button resume-button' ))
+        self.pause_widget.mount(Button("Restart", classes='pause-go-button restart-button' ))
+        self.pause_widget.mount(Button("Exit", classes='pause-go-button exit-button' ))
+    
+    def resume_game(self):
+        self.paused = False
+        self.pause_widget.remove()
+    
+    # game over and restart -------------------------
     def check_GO(self) -> None:
         g = self.playground_widget
         s = self.snake
         
-        head_x = s.body[0][0]
-        head_y = s.body[0][1]
+        head_x, head_y = s.body[0] 
 
         go_conditions = [
             head_x < 0, 
             head_y < 0, 
             head_x == g.size.width, 
             head_y == g.size.height,
-            (head_x, head_y) in list(self.snake.body)[1:]
+            (head_x, head_y) in list(s.body)[1:]
         ]
 
         if any(go_conditions):
-            self.GO_status = True
+            self.game_over = True 
 
-            self.game_over_widget: Label = Label("G A M E  O V E R", classes="game_over")
-            g.mount(self.game_over_widget)
+            self.game_over_menu_widget = Container(classes="game-over-menu")
+            self.playground_widget.mount(self.game_over_menu_widget)
 
-            self.restart_widget: Button = Button("Restart", id="restart")
-            g.mount(self.restart_widget)
+            self.game_over_menu_widget.mount(Label("G A M E  O V E R", classes="game-over-title"))
+            self.game_over_menu_widget.mount(Button("Restart", classes="pause-go-button restart-button"))
+            self.game_over_menu_widget.mount(Button("Exit", classes='pause-go-button exit-button' ))
 
-    def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "restart":
-            self.handle_restart()
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.has_class("restart-button"):
+            self.restart_game()
+        elif event.button.has_class("resume-button"):
+            self.resume_game()
+        elif event.button.has_class("exit-button"):
+            exit()
 
-    def handle_restart(self):
-        # remove overlay
-        self.game_over_widget.remove()
-        self.restart_widget.remove()
+    def restart_game(self) -> None:
+        # remove overlay if called from go screen
+        if hasattr(self, "game_over_menu_widget"):
+            self.game_over_menu_widget.remove()
         
         # restart game variables
         random_pos = randint(10, 20)
         self.snake = Snake(random_pos-1 if random_pos&1 else random_pos, randint(10, 30), 'r') # ('r', 'u', 'd')[randint(0, 2)]
-        self.GO_status: bool = False
+        self.game_over: bool = False
         self.time: float = 0.0
-        self.game_speed: float = 0.1
+        self.score = 0
+        self.level = 1
         
         # restart visuals
-        g = self.playground_widget
-        head_x = self.snake.body[0][0]
-        head_y = self.snake.body[0][1]
+        head_x, head_y = self.snake.body[0]
 
         # redraw snake
-        for s_w in self.snake_widget:
-            s_w.remove()
-        
-        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
-        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
-            s_w.styles.offset = pos
-            if i==0:
-                s_w.styles.color = self.snake.head_color
-            g.mount(s_w)
+        self.render_snake()
+
+        # re spawn food
+        self.food_widget.remove()
+        self.food_spawn()
 
         # footer cards
         self.position_widget.update(f"POSITION: {head_x} {head_y}")
+        self.level_widget.update(f"LEVEL: 1")
         self.score_widget.update("SCORE: 000") 
         self.time_widget.update("TIME: 00:00")
-    
-    # footer  -------------------------
-    def update_time(self) -> None: 
-        self.time+=self.game_speed
-        min, sec = int(self.time//60), int(self.time) % 60
-        self.time_widget.update(f"TIME: {min:02d}:{sec}") 
 
+        # if called from pause screen
+        self.paused = False
+        if hasattr(self, "pause_widget"):
+            self.pause_widget.remove()
+    
+    # footer -------------------------
+    def update_time(self) -> None: 
+        game_speed = 0.22 - self.level * 0.2
+        self.time+= game_speed
+        min, sec = int(self.time//60), int(self.time) % 60
+        self.time_widget.update(f"TIME: {min:02d}:{sec}")
+        
 MyApp().run()

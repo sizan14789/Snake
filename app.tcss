@@ -66,13 +66,43 @@
   }
 }
 
-.game_over {
-  color: #ff7f8f;
-  text-style: bold;
-  text-align: center;
+.game-over-menu {
+  padding: 2 4;
+  width: 30;
+  height: auto;
+  align: center middle;
+
+  background: #16231a;
+  border: solid #ff4d6d;
+
+  .game-over-title {
+    color: #ff7f8f;
+    margin-bottom: 1;
+    text-style: bold;
+    text-align: center;
+  }
 }
 
-#restart {
+.pause-menu {
+  padding: 2 4;
+  width: 30;
+  height: auto;
+  align: center middle;
+
+  background: #16231a;
+  border: solid #4f9f5a;
+
+  .pause-title {
+    width: 14;
+    margin-bottom: 1;
+    color: #9affaa;
+
+    text-style: bold;
+    text-align: center;
+  }
+}
+
+.pause-go-button {
   margin-top: 1;
   width: 14;
   height: 3;
@@ -82,4 +112,16 @@
 
   text-align: center;
   text-style: bold;
+
+  content-align: center middle;
+}
+
+.pause-go-button:hover {
+  background: #d8ffe0;
+  color: #080c09;
+}
+
+.pause-go-button:focus {
+  background: #d8ffe0;
+  color: #080c09;
 }
