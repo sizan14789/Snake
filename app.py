@@ -1,5 +1,7 @@
+from __future__ import annotations 
 from random import randint
 from collections import deque
+from abc import ABC, abstractmethod
 
 from textual.app import App, ComposeResult
 from textual.events import Key
@@ -7,14 +9,18 @@ from textual.screen import Screen
 from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import Label, Button
 
+# CLasses -----------------------------------
 class Snake:
     icon = "██"
     head_color = "#d8ffe0"
+    body_color ="#22c55e" 
+    dx_dy = { 'r': (2, 0), 'l': (-2, 0), 'u': (0, -1), 'd': (0, 1) }
+    min_length = 3
 
-    def __init__(self, g) -> None:
+    def __init__(self, g: Container) -> None:
         self.prepare_body(g)
 
-    def prepare_body(self, g):
+    def prepare_body(self, g: Container):
         x_offset, y_offset = 16, 10
         head_x = (randint(x_offset, g.size.width - x_offset) // 2) * 2
         head_y = randint(y_offset, g.size.height - y_offset)
@@ -31,24 +37,69 @@ class Snake:
         elif self.dir=='d':
             self.body.extend((head_x, head_y-i) for i in range(1, 4))
         
-    def move(self, dx: int, dy: int) -> None:
-        new_head_x = self.body[0][0] + 2*dx
-        new_head_y = self.body[0][1] + dy
-        self.body.appendleft((new_head_x, new_head_y))
-        self.body.pop()
+    def move(self, game: GameScreen) -> None:
+        new_head_x = self.body[0][0] + self.dx_dy[self.dir][0]
+        new_head_y = self.body[0][1] + self.dx_dy[self.dir][1]
 
-    def grow(self):
+        # set new head
+        self.body.appendleft((new_head_x, new_head_y))
+        new_head = Label(f"{self.icon}", classes="snake")
+        new_head.styles.offset = (new_head_x, new_head_y)
+        new_head.styles.color = self.head_color
+        game.snake_widget.appendleft(new_head)
+        game.playground_widget.mount(new_head)
+
+        # remove the old head (color)
+        game.snake_widget[1].styles.color = self.body_color
+
+        # remove old tail
+        self.body.pop()
+        game.snake_widget.pop().remove()
+
+    def grow(self, game: GameScreen):
         last_x, last_y = self.body[-1]
         self.body.append((last_x, last_y))
 
-class Food:
-    icon = "◆◆"
-    def __init__(self, x: int, y: int) -> None:
-        self.x, self.y = x, y
+        tail = Label(f"{self.icon}", classes="snake")
+        tail.styles.offset = self.body[-1]
+        game.snake_widget.append(tail)
+        game.playground_widget.mount(tail)
 
-    def power(self, snake: Snake):
-        snake.grow()
+    def shrink(self, game: GameScreen, amount: int):
+        shrink_by = amount if len(self.body) - amount >= self.min_length else 0
 
+        for _ in range(shrink_by):
+            self.body.pop()
+            game.snake_widget.pop().remove()
+    
+class Food(ABC):
+    def __init__(self, icon = "◆◆", color = "#fb7185") -> None:
+        self.height = 1
+        self.width = 2
+        self.icon = icon
+        self.color = color
+
+    @abstractmethod
+    def power(self, snake: Snake, game: GameScreen):
+        pass
+
+class AppleFood(Food):
+    def __init__(self) -> None:
+        super().__init__("◆◆", "#fb7185") 
+
+    def power(self, snake: Snake, game: GameScreen):
+        game.score+=1
+        snake.grow(game)
+        
+class BerryFood(Food):
+    def __init__(self) -> None:
+        super().__init__("○○", "#a954ff") 
+
+    def power(self, snake: Snake, game: GameScreen):
+        game.score+=1
+        snake.shrink(game, 2)
+
+# game --------------------------------------
 class MyApp(App):
     CSS_PATH = "app.tcss"
 
@@ -57,7 +108,6 @@ class MyApp(App):
 
     def on_mount(self):
         self.push_screen(MenuScreen())
-        # self.push_screen(GameScreen())
 
 class HeaderWidget(Container):
     def compose(self) -> ComposeResult:
@@ -65,14 +115,9 @@ class HeaderWidget(Container):
 
 class GameScreen(Screen):
     def __init__(self) -> None:
-        self.time: float = 0.0 
-        self.score = 0
-        self.level = 1
-    
-        self.game_over: bool = False
-        self.paused = False
-    
-        super().__init__()
+        self.base_speed = 0.15
+        self.min_speed = 0.07
+        super().__init__() 
     
     # layout -------------------------
     def compose(self) -> ComposeResult:
@@ -83,87 +128,138 @@ class GameScreen(Screen):
                 self.playground_widget = Container(classes="playground")
                 yield self.playground_widget
                     
-            with Vertical(classes="footer-container"): 
-                with Horizontal(classes="footer-cards"):
-                    self.score_widget = Label(f"SCORE: 000", classes="footer-card", id="score")
-                    yield self.score_widget
-    
-                    # self.position_widget = Label(f"POSITION: 0 0", classes="footer-card", id="footer-card-position")
-                    # yield self.position_widget
-    
-                    self.level_widget = Label(f"LEVEL: {self.level:02d}", classes="footer-card", id="footer-card-level")
-                    yield self.level_widget
-    
-                    min, sec = int(self.time//60), int(self.time) % 60
-                    self.time_widget = Label(f"TIME: {min:02d}:{sec}", classes="footer-card")
-                    yield self.time_widget
-
+            yield Horizontal(classes="footer-container")
+            
     # Setup -------------------------
     def on_mount(self) -> None:
-        self.call_after_refresh(self.setup_game)
-            
-    def setup_game(self): 
-        self.snake = Snake(self.playground_widget)    
-        self.render_snake()
-        self.food_spawn()
-        interval = min(0.8 , 0.16-self.level * 0.02)
-        self.set_interval(interval, self.game_tick)
+        self.call_after_refresh(self.setup_game) 
+    
+    def setup_game(self):
+        # Initialize game variables
+        self.time: float = 0.0 
+        self.score = 0
+        self.level = 1
+
+        self.game_over: bool = False
+        self.paused = False 
+
+        self.next_dir = deque() 
+
+        # setup food
+        if hasattr(self, "food_widget_dict"): # if previous food exists
+            for food in self.food_widget_dict.values():
+                food.remove()
+
+        self.food_widget_dict = {}
+        self.food_dict = {}
+        self.spawn_one_food()
+        self.spawn_one_food()
+        self.spawn_one_food()
+        
+        # setup snake
+        self.snake = Snake(self.playground_widget)
+
+        if hasattr(self, "snake_widget"): # if previous snake exists
+            for s_w in self.snake_widget:
+                s_w.remove()
+        
+        self.snake_widget = deque([ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ])
+        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
+            s_w.styles.offset = pos
+            if i==0:
+                s_w.styles.color = self.snake.head_color
+            self.playground_widget.mount(s_w)
+
+        # setup timer
+        if hasattr(self, "timer"): # if previous timer exists
+            self.timer.stop()
+        self.timer = self.set_interval(self.base_speed, self.game_tick)
+
+        # setup_footer  
+        if hasattr(self, 'score_widget'): # remove footers if exist 
+            self.score_widget.remove()
+            self.level_widget.remove()
+            self.time_widget.remove()
+
+        a = self.query_one(".footer-container", Horizontal)
+        self.score_widget = Label(f"SCORE: 000", classes="footer-card")
+        a.mount(self.score_widget)
+        self.level_widget = Label(f"LEVEL: 01", classes="footer-card")
+        a.mount(self.level_widget)
+        self.time_widget = Label(f"TIME: 00:00", classes="footer-card")
+        a.mount(self.time_widget)
     
     # Movement -------------------------
-    def on_key(self, event) -> None:
+    def on_key(self, event: Key) -> None:
         if self.game_over:
+            self.navigation_for_pause_game_over(event.key)            
             return
         if self.paused:
-            if event.key in ('escape', 'space'):
-                self.resume_game()
-            return
-    
-        s = self.snake
-    
-        # up down 
-        if event.key in ('s', 'down') and s.dir!="u":
-            s.dir = "d"
-    
-        elif event.key in ('w', 'up') and s.dir!="d":
-            s.dir = "u"
-    
-        # right left 
-        elif event.key in ('d', 'right') and s.dir!="l":
-            s.dir = "r"
-        elif event.key in ('a', 'left') and s.dir!="r":
-            s.dir = "l"
-        elif event.key in ('escape', 'space'): 
+            self.navigation_for_pause_game_over(event.key)
+            return 
+        
+        # up down left right
+        if event.key in ('s', 'down'):
+            if len(self.next_dir) == 2:
+                self.next_dir.pop()
+            self.next_dir.append("d")
+
+        elif event.key in ('w', 'up'):
+            if len(self.next_dir) == 2:
+                self.next_dir.pop()
+            self.next_dir.append("u")
+        
+        elif event.key in ('d', 'right'):
+            if len(self.next_dir) == 2:
+                self.next_dir.pop()
+            self.next_dir.append("r")
+
+        elif event.key in ('a', 'left'):
+            if len(self.next_dir) == 2:
+                self.next_dir.pop()
+            self.next_dir.append("l")
+
+        elif event.key in ('escape', 'space'): # Pause
             self.pause_game() 
-      
+
+    def navigation_for_pause_game_over(self, key: str) -> None:
+            options_list = list(self.query(".pause-go-button"))
+
+            current_focus = self.app.focused            
+            current_focus_index = len(options_list) - 1
+
+            if current_focus:
+                current_focus_index = options_list.index(current_focus)
+
+            if key in ('escape', 'space'):
+                self.resume_game()
+
+            elif key in ('s', 'down'):
+                options_list[(current_focus_index + 1) % len(options_list)].focus()
+            elif key in ('w', 'up'):
+                options_list[(current_focus_index - 1 + len(options_list)) % len(options_list)].focus()
+    
     def game_tick(self) -> None:
         if self.game_over:
             return
     
         if self.paused:
             return
-    
-        s = self.snake 
-    
-        # up down
-        if s.dir=="d":
-            s.move(0, 1)
-        elif s.dir=="u":
-            s.move(0, -1)
-    
-        # right left 
-        elif s.dir=="r":
-            s.move(1, 0)
-        elif s.dir=="l":
-            s.move(-1, 0)
-    
-        head_x, head_y = s.body[0]
-    
-        # update position 
-        # self.position_widget.update(f"POSITION: {head_x} {head_y}")
-    
+
+        # provide direction to snake
+        last_dir = self.snake.dir
+        if(self.next_dir):
+            last_dir = self.next_dir.popleft()
+
+        if not any([
+            self.snake.dir in ('r', 'l') and last_dir in ('r', 'l'),
+            self.snake.dir in ('u', 'd') and last_dir in ('u', 'd') 
+        ]):
+            self.snake.dir = last_dir
+
         # move snake
-        self.render_snake()
-    
+        self.snake.move(self) 
+
         # collision
         self.check_food_collision()
     
@@ -172,51 +268,45 @@ class GameScreen(Screen):
     
         # update time
         self.update_time()
+
+    # Food and collision ------------------------- 
+    def spawn_one_food(self):
+        food_classes = [ AppleFood, BerryFood, AppleFood, AppleFood ]
+        cur_food = food_classes[randint(0, len(food_classes)-1)]()
+
+        # generating random location and adding to list
+        f_x = (randint(0, self.playground_widget.size.width - cur_food.width) // 2)*2
+        f_y = randint(0, self.playground_widget.size.height - cur_food.height)
+        self.food_dict[(f_x, f_y)] = cur_food
+
+        # creating food widget
+        c_f = Label(f"{cur_food.icon}", classes="food")
+        c_f.styles.color = cur_food.color
+        c_f.styles.offset = (f_x, f_y)
+
+        self.food_widget_dict[(f_x, f_y)] = c_f
+        self.playground_widget.mount(c_f)
     
-    def render_snake(self):
-        # if called first time
-        if hasattr(self, "snake_widget"):
-            for s_w in self.snake_widget:
-                s_w.remove()
-    
-        self.snake_widget = [ Label(f"{self.snake.icon}", classes="snake") for _ in self.snake.body ]
-        for i, (s_w, pos) in enumerate(zip(self.snake_widget, self.snake.body)):
-            s_w.styles.offset = pos
-            if i==0:
-                s_w.styles.color = self.snake.head_color
-            self.playground_widget.mount(s_w)
-    
-    # Food and collision -------------------------
-    def food_spawn(self) -> None:
-        g = self.playground_widget
-    
-        food_x = randint(0, self.playground_widget.size.width - 1)
-        food_y = randint(0, self.playground_widget.size.height - 1)
-    
-        self.food = Food(food_x-1 if food_x&1 else food_x, food_y)
-        f = self.food
-    
-        self.food_widget = Label(f"{self.food.icon}", classes="food")
-        self.food_widget.styles.offset = (f.x, f.y)
-        g.mount(self.food_widget)
-    
+    def remove_one_food(self, x: int, y: int):
+        self.food_dict.pop((x, y))
+        self.food_widget_dict.pop((x, y)).remove()
+      
     def check_food_collision(self) -> None:
-        s = self.snake
-        f = self.food
+        prev_level = self.level
+        head_x, head_y = self.snake.body[0] 
     
-        head_x, head_y = s.body[0] 
-    
-        if (head_x, head_y) in [ (f.x, f.y) ]:
-            self.food_widget.remove()
-            self.food_spawn()
-    
-            self.score+=1
+        if (head_x, head_y) in self.food_dict:
+            self.food_dict[(head_x, head_y)].power(self.snake, self)
+            self.remove_one_food(head_x, head_y)
+            self.spawn_one_food()
+
             self.score_widget.update(f"SCORE: {self.score:03d}")
-    
             self.level = self.score // 5 + 1
             self.level_widget.update(f"LEVEL: {self.level:02d}")
-    
-            f.power(s)
+
+        if self.level > prev_level: 
+            self.timer.stop()
+            self.timer = self.set_interval(max(self.min_speed, self.base_speed - self.level * 0.02), self.game_tick)
     
     # Pause Resume -------------------------
     def pause_game(self):
@@ -263,7 +353,20 @@ class GameScreen(Screen):
             self.game_over_menu_widget.mount(Button("Main Menu", classes='pause-go-button menu-button' ))
 
             self.game_over_menu_widget.query_one(".restart-button").focus()
-    
+
+    def restart_game(self) -> None:
+        # remove overlay if called from game over screen
+        if hasattr(self, "game_over_menu_widget"):
+            self.game_over_menu_widget.remove()
+
+        # remove overlay if called from pause screen
+        self.paused = False
+        if hasattr(self, "pause_widget"):
+            self.pause_widget.remove()
+
+        self.setup_game() 
+
+    # Button handling ----------------------     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("restart-button"):
             self.restart_game()
@@ -272,46 +375,11 @@ class GameScreen(Screen):
         elif event.button.has_class("menu-button"):
             self.app.pop_screen()
     
-    def restart_game(self) -> None:
-        # remove overlay if called from go screen
-        if hasattr(self, "game_over_menu_widget"):
-            self.game_over_menu_widget.remove()
-    
-        # restart game variables
-        random_pos = randint(10, 20)
-        self.snake = Snake(self.playground_widget)
-        self.game_over: bool = False
-        self.time: float = 0.0
-        self.score = 0
-        self.level = 1
-    
-        # restart visuals
-        head_x, head_y = self.snake.body[0]
-    
-        # redraw snake
-        self.render_snake()
-    
-        # re spawn food
-        self.food_widget.remove()
-        self.food_spawn()
-    
-        # footer cards
-        # self.position_widget.update(f"POSITION: {head_x} {head_y}")
-        self.level_widget.update(f"LEVEL: 1")
-        self.score_widget.update("SCORE: 000") 
-        self.time_widget.update("TIME: 00:00")
-    
-        # if called from pause screen
-        self.paused = False
-        if hasattr(self, "pause_widget"):
-            self.pause_widget.remove()
-    
     # footer -------------------------
-    def update_time(self) -> None: 
-        game_speed = 0.16 - self.level * 0.02
-        self.time+= game_speed
+    def update_time(self) -> None:  
+        self.time+= self.timer._interval 
         min, sec = int(self.time//60), int(self.time) % 60
-        self.time_widget.update(f"TIME: {min:02d}:{sec}")
+        self.time_widget.update(f"TIME: {min:02d}:{sec:02d}")
 
 class MenuScreen(Screen):
     def __init__(self) -> None:
@@ -336,23 +404,15 @@ class MenuScreen(Screen):
     def on_key(self, event: Key) -> None:
         buttons_list = list(self.query('.main-menu-button'))
         s_f = self.app.focused
+        s_f_i = 0
+        if s_f and s_f.has_class("main-menu-button"):
+            s_f_i = buttons_list.index(s_f)
 
-        if event.key in ("w", 'down'):    
-            if s_f:
-                s_f_i = buttons_list.index(s_f)
-                new_focus_index = (s_f_i + 1) % len(buttons_list)
-                buttons_list[new_focus_index].focus()
-            else:
-                buttons_list[0].focus()
-
-        elif event.key in ('s', "up"):
-            if s_f:
-                s_f_i = buttons_list.index(s_f)
-                new_focus_index = (s_f_i - 1 + len(buttons_list)) % len(buttons_list)
-                buttons_list[new_focus_index].focus()
-            else:
-                buttons_list[0].focus()
-
+        if event.key in ("s", 'down'):
+            buttons_list[(s_f_i + 1) % len(buttons_list)].focus()
+        elif event.key in ('w', "up"): 
+            buttons_list[(s_f_i - 1 + len(buttons_list)) % len(buttons_list)].focus()
+        
     # button actions --------------------
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.has_class("start-game-button") and self.state=='home':
@@ -387,7 +447,7 @@ class MenuScreen(Screen):
         sccw.mount(Label("S / ↓             Move Down", classes="control-text"))
         sccw.mount(Label("D / →            Move Right", classes="control-text"))
         sccw.mount(Label("ESC / SPACE  Pause / Resume", classes="control-text"))
-        sccw.mount(Button("Back to Main Menu", classes="control-text control-main-menu-button"))
+        sccw.mount(Button("Back to Main Menu", classes="control-text control-main-menu-button")) 
 
     def summon_about(self):
         m = self.menu_container_widget
