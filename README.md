@@ -8,10 +8,17 @@ A classic Snake game built from scratch in **Python** and **Textual**, bringing 
 
 ## 📸 Preview
 
-```
+#### Home
 
-*Add gameplay, menu, pause menu, and game-over screenshots here.*
-```
+![home page of Snake](preview/home.png)
+
+#### Gameplay
+
+![Gameplay of Snake](preview/hero.png)
+
+#### Controls
+
+![Controls page of Snake](preview/controls.png)
 
 ---
 
