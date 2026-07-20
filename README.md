@@ -187,7 +187,7 @@ python main.py
 The game can be packaged as a standalone Windows executable using PyInstaller:
 
 ```
-pyinstaller --onefile --add-data "app.tcss;." --name Snake main.py
+pyinstaller --onefile --add-data "app.tcss;." --name Snake app.py
 ```
 
 The executable will be generated in:
