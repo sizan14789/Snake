@@ -256,3 +256,30 @@
 
   border-top: solid #4f9f5a;
 }
+
+/* ------------------------------ WARNING EXCLUSIVE -------------------------------- */
+
+.warning-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  padding: 2 4;
+
+  align: center middle;
+
+  background: #16231a;
+  border: solid #facc15;
+
+  .warning-title {
+    margin-bottom: 1;
+
+    color: #facc15;
+    text-style: bold;
+    text-align: center;
+  }
+
+  .warning-text {
+    color: #e2ffe5;
+    text-align: center;
+  }
+}

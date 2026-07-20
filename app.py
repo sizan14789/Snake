@@ -4,10 +4,13 @@ from collections import deque
 from abc import ABC, abstractmethod
 
 from textual.app import App, ComposeResult
-from textual.events import Key
+from textual.events import Key, Resize
 from textual.screen import Screen
 from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import Label, Button
+
+MIN_WIDTH = 90
+MIN_HEIGHT = 34
 
 # CLasses -----------------------------------
 class Snake:
@@ -21,9 +24,14 @@ class Snake:
         self.prepare_body(g)
 
     def prepare_body(self, g: Container):
-        x_offset, y_offset = 16, 10
-        head_x = (randint(x_offset, g.size.width - x_offset) // 2) * 2
-        head_y = randint(y_offset, g.size.height - y_offset)
+        x_offset, y_offset = int(g.size.width * 0.2) , int(g.size.height * 0.2)
+
+        head_x = g.size.width // 2
+        head_y = g.size.height // 2
+
+        if g.size.width - (2 * x_offset) > 5 and g.size.height - (2 * y_offset) > 2:
+            head_x = (randint(x_offset, g.size.width - x_offset) // 2) * 2
+            head_y = randint(y_offset, g.size.height - y_offset)        
 
         self.body = deque([ (head_x, head_y) ]) 
         self.dir = ('r', 'l', 'u', 'd')[randint(0, 3)]
@@ -66,7 +74,7 @@ class Snake:
         game.playground_widget.mount(tail)
 
     def shrink(self, game: GameScreen, amount: int):
-        shrink_by = amount if len(self.body) - amount >= self.min_length else 0
+        shrink_by = min(amount, len(self.body)-self.min_length)
 
         for _ in range(shrink_by):
             self.body.pop()
@@ -88,7 +96,7 @@ class AppleFood(Food):
         super().__init__("◆◆", "#fb7185") 
 
     def power(self, snake: Snake, game: GameScreen):
-        game.score+=1
+        game.score+=1 
         snake.grow(game)
         
 class BerryFood(Food):
@@ -96,11 +104,11 @@ class BerryFood(Food):
         super().__init__("○○", "#a954ff") 
 
     def power(self, snake: Snake, game: GameScreen):
-        game.score+=1
+        game.score+=1 
         snake.shrink(game, 2)
 
 # game --------------------------------------
-class MyApp(App):
+class SnakeApp(App):
     CSS_PATH = "app.tcss"
 
     def __init__(self) -> None:
@@ -114,6 +122,9 @@ class HeaderWidget(Container):
         yield Label("S N A K E", classes="header-text")
 
 class GameScreen(Screen):
+    min_h = int((MIN_HEIGHT - 10) * 0.9)
+    min_w = int(MIN_WIDTH * 0.9)
+ 
     def __init__(self) -> None:
         self.base_speed = 0.15
         self.min_speed = 0.07
@@ -142,20 +153,10 @@ class GameScreen(Screen):
 
         self.game_over: bool = False
         self.paused = False 
+        self.too_small = False
 
         self.next_dir = deque() 
 
-        # setup food
-        if hasattr(self, "food_widget_dict"): # if previous food exists
-            for food in self.food_widget_dict.values():
-                food.remove()
-
-        self.food_widget_dict = {}
-        self.food_dict = {}
-        self.spawn_one_food()
-        self.spawn_one_food()
-        self.spawn_one_food()
-        
         # setup snake
         self.snake = Snake(self.playground_widget)
 
@@ -169,6 +170,17 @@ class GameScreen(Screen):
             if i==0:
                 s_w.styles.color = self.snake.head_color
             self.playground_widget.mount(s_w)
+
+        # setup food
+        if hasattr(self, "food_widget_dict"): # if previous food exists
+            for food in self.food_widget_dict.values():
+                food.remove()
+
+        self.food_widget_dict = {}
+        self.food_dict = {}
+        self.spawn_one_food()
+        self.spawn_one_food()
+        self.spawn_one_food()
 
         # setup timer
         if hasattr(self, "timer"): # if previous timer exists
@@ -188,16 +200,21 @@ class GameScreen(Screen):
         a.mount(self.level_widget)
         self.time_widget = Label(f"TIME: 00:00", classes="footer-card")
         a.mount(self.time_widget)
+        
+        if self.playground_widget.size.height <self.min_h or self.playground_widget.size.width < self.min_w:
+            self.too_small = True
+            self.show_resize_warning()
+            return
     
     # Movement -------------------------
     def on_key(self, event: Key) -> None:
-        if self.game_over:
-            self.navigation_for_pause_game_over(event.key)            
+        if self.too_small:
             return
-        if self.paused:
-            self.navigation_for_pause_game_over(event.key)
-            return 
-        
+
+        if self.game_over or self.paused:
+            self.navigation_for_pause_game_over(event.key)          
+            return
+
         # up down left right
         if event.key in ('s', 'down'):
             if len(self.next_dir) == 2:
@@ -208,7 +225,7 @@ class GameScreen(Screen):
             if len(self.next_dir) == 2:
                 self.next_dir.pop()
             self.next_dir.append("u")
-        
+
         elif event.key in ('d', 'right'):
             if len(self.next_dir) == 2:
                 self.next_dir.pop()
@@ -223,28 +240,25 @@ class GameScreen(Screen):
             self.pause_game() 
 
     def navigation_for_pause_game_over(self, key: str) -> None:
-            options_list = list(self.query(".pause-go-button"))
+        options_list = list(self.query(".pause-go-button"))
 
-            current_focus = self.app.focused            
-            current_focus_index = len(options_list) - 1
+        current_focus = self.app.focused 
+        current_focus_index = len(options_list) - 1
 
-            if current_focus:
-                current_focus_index = options_list.index(current_focus)
+        if current_focus:
+            current_focus_index = options_list.index(current_focus)
 
-            if key in ('escape', 'space'):
-                self.resume_game()
+        if key in ('escape', 'space') and self.paused:
+            self.resume_game()
 
-            elif key in ('s', 'down'):
-                options_list[(current_focus_index + 1) % len(options_list)].focus()
-            elif key in ('w', 'up'):
+        elif key in ('s', 'down'):
+            options_list[(current_focus_index + 1) % len(options_list)].focus()
+        elif key in ('w', 'up'):
                 options_list[(current_focus_index - 1 + len(options_list)) % len(options_list)].focus()
     
     def game_tick(self) -> None:
-        if self.game_over:
-            return
-    
-        if self.paused:
-            return
+        if self.too_small or self.game_over or self.paused:
+            return 
 
         # provide direction to snake
         last_dir = self.snake.dir
@@ -275,8 +289,13 @@ class GameScreen(Screen):
         cur_food = food_classes[randint(0, len(food_classes)-1)]()
 
         # generating random location and adding to list
-        f_x = (randint(0, self.playground_widget.size.width - cur_food.width) // 2)*2
-        f_y = randint(0, self.playground_widget.size.height - cur_food.height)
+        while True:
+            f_x = (randint(0, self.playground_widget.size.width - cur_food.width) // 2) * 2
+            f_y = randint(0, self.playground_widget.size.height - cur_food.height)
+
+            if (f_x, f_y) not in self.food_dict and (f_x, f_y) not in self.snake.body:
+                break
+
         self.food_dict[(f_x, f_y)] = cur_food
 
         # creating food widget
@@ -337,8 +356,8 @@ class GameScreen(Screen):
         go_conditions = [
             head_x < 0, 
             head_y < 0, 
-            head_x == g.size.width, 
-            head_y == g.size.height,
+            head_x >= g.size.width, 
+            head_y >= g.size.height,
             (head_x, head_y) in list(s.body)[1:]
         ]
     
@@ -380,6 +399,32 @@ class GameScreen(Screen):
         self.time+= self.timer._interval 
         min, sec = int(self.time//60), int(self.time) % 60
         self.time_widget.update(f"TIME: {min:02d}:{sec:02d}")
+
+    # resize and warnings
+    def on_resize(self, event: Resize) -> None:
+        if event.size.width < MIN_WIDTH or event.size.height < MIN_HEIGHT:
+            self.too_small = True
+            self.show_resize_warning()
+        else:
+            self.too_small = False
+            self.hide_resize_warning()
+
+    def show_resize_warning(self):
+        if hasattr(self, "warning_container_widget"):
+            return
+
+        self.warning_container_widget = Container(classes='warning-container')
+        self.playground_widget.mount(self.warning_container_widget)
+
+        self.warning_container_widget.mount(Label(" W A R N I N G", classes="warning-title"))
+        self.warning_container_widget.mount(Label("Window too small", classes="warning-text"))
+
+    def hide_resize_warning(self):
+        self.too_small = False
+
+        if hasattr(self, "warning_container_widget"):
+            self.warning_container_widget.remove()
+            del self.warning_container_widget
 
 class MenuScreen(Screen):
     def __init__(self) -> None:
@@ -481,7 +526,8 @@ class MenuScreen(Screen):
             classes="about-text"
         ))
 
-        acw.mount(Label("Created by Sizan", classes="about-credit" ))
+        acw.mount(Label("Created by Sizan Molla", classes="about-credit" ))
         acw.mount(Button( "Back to Main Menu", classes="about-text about-main-menu-button" ))
 
-MyApp().run()
+SnakeApp().run()
+ 
