@@ -10,7 +10,7 @@ from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import Label, Button
 
 MIN_WIDTH = 90
-MIN_HEIGHT = 34
+MIN_HEIGHT = 28
 
 # CLasses -----------------------------------
 class Snake:
@@ -96,7 +96,7 @@ class AppleFood(Food):
         super().__init__("◆◆", "#fb7185") 
 
     def power(self, snake: Snake, game: GameScreen):
-        game.score+=1 
+        game.score+=1
         snake.grow(game)
         
 class BerryFood(Food):

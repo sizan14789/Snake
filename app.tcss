@@ -6,7 +6,7 @@
 }
 
 .header-container {
-  height: 6;
+  height: 4;
   align: center middle;
 
   background: #16231a;
@@ -50,7 +50,7 @@
 }
 
 .footer-container {
-  height: 4;
+  height: 2;
   align: center middle;
 
   background: #1a2b20;
@@ -67,8 +67,8 @@
 }
 
 .game-over-menu {
-  padding: 2 4;
-  width: 40;
+  padding: 1 4;
+  width: 34;
   height: auto;
   align: center middle;
 
@@ -85,8 +85,8 @@
 }
 
 .pause-menu {
-  padding: 2 4;
-  width: 40;
+  padding: 1 2;
+  width: 34;
   height: auto;
   align: center middle;
 
@@ -95,7 +95,7 @@
 
   .pause-title {
     width: 15;
-    margin-bottom: 2;
+    margin-bottom: 1;
     color: #9affaa;
 
     text-style: bold;
@@ -247,7 +247,7 @@
 }
 
 .menu-footer {
-  height: 4;
+  height: 2;
   width: 100%;
   content-align: center middle;
 
